@@ -22,9 +22,9 @@ Automatically replace HuggingFace URLs with hf-mirror.com and download
 files safely within your current working directory.
 
 Examples:
-  python -m hfm-download --help
-  python -m hfm-download --config my-config.yaml
-  python -m hfm-download --config my-config.yaml --verbose
+  hfm-download --help
+  hfm-download --config my-config.yaml
+  hfm-download --config my-config.yaml --verbose
 
 Configuration YAML format:
   # Optional settings
@@ -89,7 +89,7 @@ downloads:
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser."""
     parser = argparse.ArgumentParser(
-        prog='python -m hfm-download',
+        prog='hfm-download',
         description=HELP_TEXT,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
@@ -99,13 +99,13 @@ Configuration File:
 
 Examples:
   # Download using default config file
-  python -m hfm-download
+  hfm-download
   
   # Download using custom config
-  python -m hfm-download --config my-config.yaml
+  hfm-download --config my-config.yaml
   
   # Verbose output
-  python -m hfm-download --config my-config.yaml --verbose
+  hfm-download --config my-config.yaml --verbose
 
 For more information, see the project documentation.
 """
@@ -134,6 +134,12 @@ For more information, see the project documentation.
         '--example-config',
         action='store_true',
         help='Print example configuration file and exit'
+    )
+    
+    parser.add_argument(
+        '--force', '-f',
+        action='store_true',
+        help='Overwrite existing files even if already downloaded'
     )
     
     return parser
@@ -175,10 +181,12 @@ def main(argv: list = None) -> int:
         
         # Start downloads
         logger.info(f"Starting {len(tasks)} download tasks...")
-        results = download_all(config, cwd)
+        force = args.force
+        results = download_all(config, cwd, force=force)
         
         # Print summary
         success = [f for f, r in results.items() if r['status'] == 'success']
+        skipped = [f for f, r in results.items() if r['status'] == 'skipped']
         failed = [f for f, r in results.items() if r['status'] == 'failed']
         
         print(f"\n{'='*50}")
@@ -186,7 +194,13 @@ def main(argv: list = None) -> int:
         print(f"{'='*50}")
         print(f"Total tasks: {len(results)}")
         print(f"Succeeded: {len(success)}")
+        print(f"Skipped: {len(skipped)}")
         print(f"Failed: {len(failed)}")
+        
+        if skipped:
+            print(f"\nSkipped files:")
+            for filename in skipped:
+                print(f"  - {filename}")
         
         if failed:
             print(f"\nFailed files:")

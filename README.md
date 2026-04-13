@@ -17,7 +17,11 @@ HuggingFace Mirror Downloader - Download models from hf-mirror.com with safety c
 pip install -e .
 ```
 
-Or install dependencies only:
+This installs the `hfm-download` command globally. After installation, you can use either:
+- `hfm-download --config hfm-config.yaml` (recommended after install)
+- `python -m hfm-download --config hfm-config.yaml` (always works)
+
+Or install dependencies only (for development):
 ```bash
 pip install pyyaml tqdm
 ```
@@ -31,6 +35,9 @@ pip install pyyaml tqdm
 retry_times: 3
 timeout: 30
 workers: 0  # 0 = use all CPU cores
+
+# Optional: use a custom mirror endpoint (instead of hf-mirror.com)
+# endpoint: https://mirror.example.com/
 
 # Download section (required)
 downloads:
@@ -51,25 +58,35 @@ mkdir -p bert
 3. Run:
 ```bash
 python -m hfm-download --config hfm-config.yaml
+# or after pip install -e .:
+hfm-download --config hfm-config.yaml
 ```
 
 ## Usage
 
 ```bash
 # Show help
-python -m hfm-download --help
+hfm-download --help
+# or: python -m hfm-download --help
 
 # Use default config (hfm-config.yaml)
-python -m hfm-download
+hfm-download
+# or: python -m hfm-download
 
 # Use custom config
-python -m hfm-download --config my-config.yaml
+hfm-download --config my-config.yaml
+# or: python -m hfm-download --config my-config.yaml
 
 # Verbose output
-python -m hfm-download --config my-config.yaml --verbose
+hfm-download --config my-config.yaml --verbose
+
+# Force overwrite of existing files
+hfm-download --config my-config.yaml --force
+# or: hfm-download --config my-config.yaml -f
 
 # Generate example config
-python -m hfm-download --example-config
+hfm-download --example-config
+# or: python -m hfm-download --example-config
 ```
 
 ## Configuration
@@ -81,6 +98,7 @@ python -m hfm-download --example-config
 | `retry_times` | No | 3 | Number of retries on failure |
 | `timeout` | No | 30 | Request timeout (seconds) |
 | `workers` | No | 1 | Parallel workers (0 = all CPU cores) |
+| `endpoint` | No | https://hf-mirror.com/ | Custom mirror base URL (must be HTTPS) |
 | `downloads` | Yes | - | Dict mapping target dirs to URL lists |
 
 ### `downloads` Section
@@ -147,6 +165,14 @@ downloads:
   "datasets/imdb":
     - "https://huggingface.co/datasets/stanfordnlp/imdb/blob/main/plain_text/train-00000-of-00001.parquet"
 ```
+
+### Resumable Downloads
+
+Downloads use a `.part` staging file to ensure reliability:
+1. Files are downloaded to `<filename>.part` first
+2. If interrupted, re-running the same command **resumes from where it left off**
+3. On successful completion, the `.part` file is atomically renamed to the final filename
+4. Use `--force` to overwrite existing files and download fresh instead of resuming
 
 ### Path Safety
 

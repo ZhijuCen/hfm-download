@@ -30,10 +30,12 @@ SUBDIR_KEY_REGEX = re.compile(r'^[a-zA-Z0-9_./-]+$')
 class Config:
     """Configuration container with validation."""
     
-    def __init__(self, retry_times: int = 3, timeout: int = 30, workers: int = 1):
+    def __init__(self, retry_times: int = 3, timeout: int = 30, workers: int = 1,
+                 endpoint: Optional[str] = None):
         self.retry_times = retry_times
         self.timeout = timeout
         self.workers = workers
+        self.endpoint = endpoint
         # source mapping: {dest_child_dir: [url1, url2, ...]}
         self.sources: Dict[str, List[str]] = {}
     
@@ -50,7 +52,8 @@ class Config:
     
     def __repr__(self):
         return (f"Config(retry_times={self.retry_times}, timeout={self.timeout}, "
-                f"workers={self.workers}, sources={list(self.sources.keys())})")
+                f"workers={self.workers}, endpoint={self.endpoint}, "
+                f"sources={list(self.sources.keys())})")
 
 
 def validate_hf_url(url: str) -> bool:
@@ -117,19 +120,27 @@ def parse_hf_url(url: str) -> Tuple[str, str]:
     return model_id, filename
 
 
-def extract_mirror_url(url: str) -> str:
+def extract_mirror_url(url: str, endpoint: Optional[str] = None) -> str:
     """
     Convert original HuggingFace URL to mirror URL.
     
     Args:
         url: Original huggingface.co URL (http or https)
+        endpoint: Optional custom mirror endpoint. If provided, replaces
+                  huggingface.co with this endpoint. Must be HTTPS URL.
     
     Returns:
-        Mirror URL using hf-mirror.com
+        Mirror URL using the endpoint (custom if provided, else hf-mirror.com)
     """
-    # Handle both http and https
-    url = url.replace('http://huggingface.co/', 'https://hf-mirror.com/')
-    url = url.replace('https://huggingface.co/', 'https://hf-mirror.com/')
+    if endpoint:
+        # Use custom endpoint (ensure it ends with / for proper replacement)
+        base = endpoint.rstrip('/') + '/'
+        url = url.replace('http://huggingface.co/', base)
+        url = url.replace('https://huggingface.co/', base)
+    else:
+        # Default to hf-mirror.com
+        url = url.replace('http://huggingface.co/', 'https://hf-mirror.com/')
+        url = url.replace('https://huggingface.co/', 'https://hf-mirror.com/')
     return url
 
 
@@ -195,6 +206,27 @@ def load_config(config_path: Optional[str] = None) -> Config:
     if 'workers' in raw_config:
         config.workers = int(raw_config['workers'])
         logger.info(f"Workers: {config.workers} (effective: {config.get_effective_workers()})")
+    
+    # Optional: endpoint (custom mirror base URL)
+    if 'endpoint' in raw_config:
+        endpoint = raw_config['endpoint']
+        if endpoint is not None:
+            # Validate it's a valid HTTPS URL
+            endpoint_str = str(endpoint).strip().rstrip('/')
+            if endpoint_str:
+                parsed = urlparse(endpoint_str)
+                if parsed.scheme != 'https' or not parsed.netloc:
+                    raise ConfigValidationError(
+                        f"Invalid endpoint URL: {endpoint}. "
+                        f"Endpoint must be a valid HTTPS URL (e.g., https://mirror.example.com)"
+                    )
+                config.endpoint = endpoint_str + '/'
+                logger.info(f"Custom endpoint: {config.endpoint}")
+            else:
+                logger.info("Endpoint is empty, using default hf-mirror.com")
+    
+    if config.endpoint is None:
+        logger.info("Using default mirror: https://hf-mirror.com/")
     
     # Look for 'downloads' section
     if 'downloads' not in raw_config:
@@ -267,8 +299,8 @@ def load_config(config_path: Optional[str] = None) -> Config:
                     f"Invalid HuggingFace URL in downloads['{subdir}']: {url}"
                 )
             
-            # Convert to mirror URL
-            mirror_url = extract_mirror_url(url)
+            # Convert to mirror URL using configured endpoint
+            mirror_url = extract_mirror_url(url, config.endpoint)
             validated_urls.append(mirror_url)
         
         if validated_urls:

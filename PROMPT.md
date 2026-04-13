@@ -25,6 +25,7 @@ guidance: true
 retry_times: 3      # default: 3
 timeout: 30          # default: 30, in seconds
 workers: 0           # default: 1; 0 means auto-detect CPU cores
+endpoint: https://hf-mirror.com/  # default: https://hf-mirror.com/; can be overridden with custom HTTPS mirror
 
 # Required: download section
 downloads:
@@ -50,6 +51,7 @@ downloads:
 | **Multi-level paths** | Use `/`-separated flat keys: `"datasets/imdb"`. All intermediate directories must already exist (`mkdir -p datasets/imdb`) |
 | **No auto-create** | Subdirectories must exist before running. Tool does not create them. |
 | **URL types** | Both `/resolve/` and `/blob/` paths are supported. `http://` and `https://` both accepted. |
+| **`endpoint`** | Optional custom mirror base URL. Must be HTTPS. Replaces `huggingface.co` with this endpoint. Default: `https://hf-mirror.com/` |
 
 ---
 
@@ -68,13 +70,14 @@ The tool must enforce:
 
 ## URL Handling
 
-- **Mirror replacement**: `https://huggingface.co/` → `https://hf-mirror.com/`
+- **Mirror replacement**: `https://huggingface.co/` → `https://hf-mirror.com/` (or custom `endpoint` if configured)
 - **Supported path patterns**:
   - `/<model_id>/resolve/main/<filename>`
   - `/<model_id>/resolve/<version>/<filename>`
   - `/<model_id>/blob/main/<filename>`
   - `/<model_id>/blob/<version>/<filename>`
 - Model IDs may contain hyphens (e.g. `google-bert`, `bert-base-uncased`)
+- Custom `endpoint` is used in place of `https://hf-mirror.com/` when specified
 
 ---
 
@@ -118,6 +121,18 @@ Progress bars must not interfere with each other across threads.
 | 3 | Configuration error (invalid YAML, missing `downloads:`, nested dict, etc.) |
 | 4 | Download error (unrecoverable) |
 | 130 | Interrupted by user |
+
+---
+
+## CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `-c, --config <path>` | Path to YAML config file (default: `hfm-config.yaml` or `$HFM_CONFIG_FILE`) |
+| `-v, --verbose` | Enable verbose (DEBUG) logging |
+| `--version` | Show version and exit |
+| `--example-config` | Print example configuration file and exit |
+| `-f, --force` | Overwrite existing files even if already downloaded |
 
 ---
 

@@ -37,7 +37,7 @@ dev = [
 ]
 
 [project.scripts]
-# Not needed since we use python -m hfm-download
+hfm-download = "hfm_download.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

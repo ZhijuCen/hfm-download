@@ -3,6 +3,7 @@ Core download logic with retry mechanism and multi-threading support.
 """
 
 import os
+import shutil
 import time
 import threading
 import urllib.request
@@ -80,9 +81,10 @@ def is_retryable_error(e: Exception, status_code: Optional[int] = None) -> bool:
 
 
 def download_file(url: str, dest_path: Path, timeout: int = 30,
-                   retry_times: int = 3, progress_callback: Optional[Callable] = None) -> bool:
+                   retry_times: int = 3, progress_callback: Optional[Callable] = None,
+                   force: bool = False) -> bool:
     """
-    Download a single file with retry logic.
+    Download a single file with retry logic and resumable .part staging.
     
     Args:
         url: Mirror URL to download from
@@ -90,6 +92,7 @@ def download_file(url: str, dest_path: Path, timeout: int = 30,
         timeout: Request timeout in seconds
         retry_times: Number of retry attempts
         progress_callback: Optional callback(current, total) for progress updates
+        force: If True, overwrite existing file (ignore .part staging)
     
     Returns:
         True if download succeeded
@@ -102,6 +105,18 @@ def download_file(url: str, dest_path: Path, timeout: int = 30,
         'User-Agent': 'hfm-download/1.0 (HuggingFace Mirror Downloader)'
     }
     
+    # Compute .part staging path
+    part_path = dest_path.parent / (dest_path.name + '.part')
+    
+    # Determine resume mode: if .part exists with non-zero size and not forcing
+    resume_offset = 0
+    resume_mode = False
+    
+    if not force and part_path.exists() and part_path.stat().st_size > 0:
+        resume_offset = part_path.stat().st_size
+        resume_mode = True
+        logger.info(f"Resuming {dest_path.name} from offset {resume_offset}")
+    
     last_error = None
     
     for attempt in range(retry_times + 1):
@@ -110,17 +125,83 @@ def download_file(url: str, dest_path: Path, timeout: int = 30,
             
             request = urllib.request.Request(url, headers=headers)
             
+            # Add Range header for resume
+            if resume_mode and resume_offset > 0:
+                request.add_header('Range', f'bytes={resume_offset}-')
+            
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
-                logger.info(f"File size: {total_size} bytes")
+                
+                # Handle server not supporting Range (HTTP 200 instead of 206)
+                if response.status == 200 and resume_mode:
+                    logger.info(f"Server doesn't support Range, restarting from beginning")
+                    # Truncate and restart
+                    with open(part_path, 'wb') as f:
+                        pass  # truncate
+                    resume_offset = 0
+                    resume_mode = False
+                    # Re-fetch without Range header for this attempt
+                    request = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(request, timeout=timeout) as resp:
+                        total_size = int(resp.headers.get('Content-Length', 0))
+                        logger.info(f"File size: {total_size} bytes")
+                        
+                        pbar = create_progress_bar(total_size, dest_path.name)
+                        
+                        downloaded = 0
+                        chunk_size = 8192  # 8KB chunks
+                        
+                        with open(part_path, 'wb') as f:
+                            while True:
+                                chunk = resp.read(chunk_size)
+                                if not chunk:
+                                    break
+                                
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                
+                                if progress_callback:
+                                    progress_callback(len(chunk), total_size)
+                                else:
+                                    pbar.update(len(chunk))
+                        
+                        pbar.close()
+                        
+                        if total_size > 0 and downloaded != total_size:
+                            logger.warning(
+                                f"Downloaded size mismatch for {dest_path.name}: "
+                                f"expected {total_size}, got {downloaded}"
+                            )
+                        
+                        logger.info(f"Successfully downloaded {dest_path.name} to {dest_path}")
+                        
+                        # Atomically rename .part to dest (inside try for proper error handling)
+                        shutil.move(part_path, dest_path)
+                        return True
+                
+                # Normal download (fresh or HTTP 206 Partial Content resume)
+                if resume_mode and response.status == 206:
+                    logger.info(f"Resumed download: HTTP 206 Partial Content, offset {resume_offset}")
+                elif not resume_mode:
+                    logger.info(f"File size: {total_size} bytes")
+                
+                # Adjust total_size for resume
+                if resume_mode and response.status == 206:
+                    # Content-Length header indicates remaining bytes, not total
+                    remaining = total_size
+                    total_size = resume_offset + remaining
                 
                 # Create progress bar
                 pbar = create_progress_bar(total_size, dest_path.name)
+                if resume_mode and resume_offset > 0:
+                    pbar.update(resume_offset)  # Show already-downloaded portion
                 
-                downloaded = 0
+                downloaded = resume_offset
                 chunk_size = 8192  # 8KB chunks
                 
-                with open(dest_path, 'wb') as f:
+                # Open in append mode for resume, write mode for fresh
+                file_mode = 'ab' if resume_mode and resume_offset > 0 else 'wb'
+                with open(part_path, file_mode) as f:
                     while True:
                         chunk = response.read(chunk_size)
                         if not chunk:
@@ -144,6 +225,9 @@ def download_file(url: str, dest_path: Path, timeout: int = 30,
                     )
                 
                 logger.info(f"Successfully downloaded {dest_path.name} to {dest_path}")
+                
+                # Atomically rename .part to dest (inside try for proper error handling)
+                shutil.move(part_path, dest_path)
                 return True
                 
         except urllib.error.HTTPError as e:
@@ -198,7 +282,8 @@ class DownloadWorker(threading.Thread):
     """Worker thread for downloading files."""
     
     def __init__(self, task_queue: List[Tuple[str, str, str]], config: Config, cwd: str,
-                 results: dict, lock: threading.Lock, progress_lock: threading.Lock):
+                 results: dict, lock: threading.Lock, progress_lock: threading.Lock,
+                 force: bool = False):
         """
         Initialize download worker.
         
@@ -209,6 +294,7 @@ class DownloadWorker(threading.Thread):
             results: Shared results dictionary
             lock: Lock for results dictionary
             progress_lock: Lock for progress updates
+            force: Overwrite existing files
         """
         super().__init__(daemon=True)
         self.tasks = task_queue
@@ -217,6 +303,7 @@ class DownloadWorker(threading.Thread):
         self.results = results
         self.lock = lock
         self.progress_lock = progress_lock
+        self.force = force
     
     def run(self):
         """Execute download tasks."""
@@ -230,12 +317,20 @@ class DownloadWorker(threading.Thread):
                 abs_subdir = validate_subdir_exists(subdir, self.cwd)
                 dest_path = build_dest_path(abs_subdir, filename, self.cwd)
                 
-                # Download with retry
+                # Skip if dest already exists and not forcing
+                if dest_path.exists() and not self.force:
+                    logger.info(f"Skipping {filename}: already exists at {dest_path}")
+                    with self.lock:
+                        self.results[filename] = {'status': 'skipped', 'path': str(dest_path)}
+                    continue
+                
+                # Download with retry (resume if .part exists)
                 success = download_file(
                     url=url,
                     dest_path=dest_path,
                     timeout=self.config.timeout,
-                    retry_times=self.config.retry_times
+                    retry_times=self.config.retry_times,
+                    force=self.force
                 )
                 
                 with self.lock:
@@ -257,13 +352,14 @@ class DownloadWorker(threading.Thread):
                     self.results[filename] = {'status': 'failed', 'error': str(e)}
 
 
-def download_all(config: Config, cwd: str) -> dict:
+def download_all(config: Config, cwd: str, force: bool = False) -> dict:
     """
     Download all files specified in configuration using multi-threading.
     
     Args:
         config: Validated Config object
         cwd: Current working directory
+        force: Overwrite existing files
     
     Returns:
         Dictionary mapping filenames to download results
@@ -307,7 +403,8 @@ def download_all(config: Config, cwd: str) -> dict:
                 cwd=cwd,
                 results=results,
                 lock=results_lock,
-                progress_lock=progress_lock
+                progress_lock=progress_lock,
+                force=force
             )
             worker.start()
             workers.append(worker)
@@ -318,9 +415,10 @@ def download_all(config: Config, cwd: str) -> dict:
     
     # Summarize results
     success_count = sum(1 for r in results.values() if r['status'] == 'success')
-    fail_count = len(results) - success_count
+    skipped_count = sum(1 for r in results.values() if r['status'] == 'skipped')
+    fail_count = sum(1 for r in results.values() if r['status'] == 'failed')
     
-    logger.info(f"Download complete: {success_count} succeeded, {fail_count} failed")
+    logger.info(f"Download complete: {success_count} succeeded, {skipped_count} skipped, {fail_count} failed")
     
     if fail_count > 0:
         logger.warning("Failed downloads:")
