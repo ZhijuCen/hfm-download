@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hfm-download"
+version = "1.0.0"
+description = "HuggingFace Mirror Downloader - Download models from hf-mirror.com"
+readme = "README.md"
+requires-python = ">=3.7"
+authors = [
+    {name = "hfm-download"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+keywords = ["huggingface", "download", "mirror", "hf-mirror"]
+
+dependencies = [
+    "pyyaml>=5.0",
+    "tqdm>=4.0",  # Optional, for progress bars
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=22.0",
+    "flake8>=4.0",
+]
+
+[project.scripts]
+# Not needed since we use python -m hfm-download
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hfm_download*"]
