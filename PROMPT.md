@@ -11,7 +11,8 @@ guidance: true
 ## Core Functionality
 
 - **Name**: `hfm-download`
-- **Entry point**: `python -m hfm-download`
+- **Entry point**: `python -m hfm-download <subcommand>`
+- **Subcommands**: `init` (create config), `run` (execute downloads)
 - **Purpose**: Automatically replace HuggingFace model URLs with `https://hf-mirror.com/`
   and download files safely into the current working directory.
 - **Dependencies**: Python standard library + `pyyaml`, `tqdm`
@@ -126,13 +127,33 @@ Progress bars must not interfere with each other across threads.
 
 ## CLI Options
 
+The CLI uses a subcommand structure with `init` and `run` subcommands:
+
+**Global Options:**
 | Option | Description |
 |--------|-------------|
-| `-c, --config <path>` | Path to YAML config file (default: `hfm-config.yaml` or `$HFM_CONFIG_FILE`) |
-| `-v, --verbose` | Enable verbose (DEBUG) logging |
 | `--version` | Show version and exit |
-| `--example-config` | Print example configuration file and exit |
+| `--verbose` | Enable verbose (DEBUG) logging |
+
+**`init` Subcommand** - Creates a new config file:
+| Option | Description |
+|--------|-------------|
+| `filename` | Config file to create (default: hfm-config.yaml) |
+| `--levels <n>` | Number of directory levels to suggest |
+| `--all-dir` | Include all available directories |
+| `--dirs <paths>` | Specify custom directory list (space-separated) |
+
+**`run` Subcommand** - Executes the downloads (this is the main download command):
+| Option | Description |
+|--------|-------------|
+| `config` | Path to YAML config file (default: hfm-config.yaml) |
 | `-f, --force` | Overwrite existing files even if already downloaded |
+| `--endpoint <url>` | Override configured endpoint (custom mirror URL) |
+| `--workers <n>` | Override configured worker count |
+| `--timeout <n>` | Override configured timeout (seconds) |
+| `--retry-times <n>` | Override configured retry count |
+
+> **Note**: The `run` subcommand is the download execution command. Use `init` first to create a config file, then `run` to execute downloads.
 
 ---
 

@@ -18,8 +18,8 @@ pip install -e .
 ```
 
 This installs the `hfm-download` command globally. After installation, you can use either:
-- `hfm-download --config hfm-config.yaml` (recommended after install)
-- `python -m hfm-download --config hfm-config.yaml` (always works)
+- `hfm-download run hfm-config.yaml` (recommended after install)
+- `python -m hfm-download run hfm-config.yaml` (always works)
 
 Or install dependencies only (for development):
 ```bash
@@ -57,9 +57,8 @@ mkdir -p bert
 
 3. Run:
 ```bash
-python -m hfm-download --config hfm-config.yaml
-# or after pip install -e .:
-hfm-download --config hfm-config.yaml
+hfm-download run hfm-config.yaml
+# or: python -m hfm-download run hfm-config.yaml
 ```
 
 ## Usage
@@ -69,24 +68,27 @@ hfm-download --config hfm-config.yaml
 hfm-download --help
 # or: python -m hfm-download --help
 
-# Use default config (hfm-config.yaml)
-hfm-download
-# or: python -m hfm-download
+# Show help for a specific subcommand
+hfm-download run --help
+hfm-download init --help
 
-# Use custom config
-hfm-download --config my-config.yaml
-# or: python -m hfm-download --config my-config.yaml
+# Initialize a config file (interactive or with options)
+hfm-download init hfm-config.yaml
+hfm-download init hfm-config.yaml --levels 2 --all-dir
 
-# Verbose output
-hfm-download --config my-config.yaml --verbose
+# Run downloads using a config file
+hfm-download run hfm-config.yaml
+
+# Run with optional overrides
+hfm-download run hfm-config.yaml --endpoint https://mirror.example.com/
+hfm-download run hfm-config.yaml --workers 4 --timeout 60 --retry-times 5
 
 # Force overwrite of existing files
-hfm-download --config my-config.yaml --force
-# or: hfm-download --config my-config.yaml -f
+hfm-download run hfm-config.yaml --force
+# or: hfm-download run hfm-config.yaml -f
 
-# Generate example config
-hfm-download --example-config
-# or: python -m hfm-download --example-config
+# Verbose output
+hfm-download run hfm-config.yaml --verbose
 ```
 
 ## Configuration
@@ -100,6 +102,32 @@ hfm-download --example-config
 | `workers` | No | 1 | Parallel workers (0 = all CPU cores) |
 | `endpoint` | No | https://hf-mirror.com/ | Custom mirror base URL (must be HTTPS) |
 | `downloads` | Yes | - | Dict mapping target dirs to URL lists |
+
+### CLI Options
+
+**Global Options:**
+| Option | Description |
+|--------|-------------|
+| `--version` | Show version and exit |
+| `--verbose` | Enable verbose (DEBUG) logging |
+
+**`init` Subcommand:**
+| Option | Description |
+|--------|-------------|
+| `filename` | Config file to create (default: hfm-config.yaml) |
+| `--levels` | Number of directory levels to suggest |
+| `--all-dir` | Include all available directories |
+| `--dirs` | Specify custom directory list |
+
+**`run` Subcommand:**
+| Option | Description |
+|--------|-------------|
+| `config` | Path to YAML config file (default: hfm-config.yaml) |
+| `-f, --force` | Overwrite existing files even if already downloaded |
+| `--endpoint <url>` | Override configured endpoint |
+| `--workers <n>` | Override configured worker count |
+| `--timeout <n>` | Override configured timeout (seconds) |
+| `--retry-times <n>` | Override configured retry count |
 
 ### `downloads` Section
 
